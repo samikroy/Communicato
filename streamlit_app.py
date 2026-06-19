@@ -1,154 +1,128 @@
-import streamlit as str
+import streamlit as st
 import pandas as pd
-from datetime import datetime
-import os
+from PIL import Image, ImageOps
+import io
+import urllib.parse
 
-# --- PAGE CONFIGURATION ---
-str.set_page_config(
-    page_title="Build Localhost - Hub",
-    page_icon="🛠️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# --- PAGE SETUP & THEME ---
+st.set_page_config(
+    page_title="Build Localhost - Social Share Hub",
+    page_icon="📸",
+    layout="centered"
 )
 
-# --- INITIALIZE SESSION STATE ---
-# Track user onboarding, milestones, and feedback local state
-if "attendee_name" not in str.session_state:
-    str.session_state.attendee_name = ""
-if "github_handle" not in str.session_state:
-    str.session_state.github_handle = ""
-if "milestones" not in str.session_state:
-    str.session_state.milestones = {
-        "1. Environment Provisioned": False,
-        "2. Core Lab Completed": False,
-        "3. Localhost Live Demo": False
+# Custom minimalistic styling matching your enterprise dark/indigo aesthetic
+st.markdown("""
+    <style>
+    .reportview-container { background: #0b0f19; }
+    div.stButton > button:first-child {
+        background-color: #4f46e5;
+        color: white;
+        border-radius: 8px;
     }
-if "feedback_submitted" not in str.session_state:
-    str.session_state.feedback_submitted = False
+    .linkedin-card {
+        background-color: #1d2226;
+        border: 1px solid #38434f;
+        border-radius: 10px;
+        padding: 16px;
+        color: #eef3f8;
+        font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- FILE PATH FOR DATA COLLECTION ---
-FEEDBACK_FILE = "event_feedback.csv"
+st.title("📸 Build Localhost Post Creator")
+st.write("Snap a live photo, add your core takeaway insights, and instantly export a tailored LinkedIn proof-of-work post.")
 
-def save_feedback(name, github, rating, comment):
-    """Appends feedback metrics to a local CSV file dataset."""
-    new_data = pd.DataFrame([{
-        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Name": name,
-        "GitHub": github,
-        "Rating": rating,
-        "Comment": comment
-    }])
-    if not os.path.isfile(FEEDBACK_FILE):
-        new_data.to_csv(FEEDBACK_FILE, index=False)
-    else:
-        new_data.to_csv(FEEDBACK_FILE, mode='a', header=False, index=False)
+# --- STEP 1: INITIALIZE BACKGROUND TEMPLATE ---
+# Creating a fallback blank indigo background banner if an external asset isn't present
+@st.cache_data
+def get_preset_background():
+    # In production, replace this with your branded asset: Image.open("assets/event_banner.png")
+    # For now, we dynamically generate a sleek dark indigo canvas block template
+    img = Image.new('RGB', (800, 450), color='#1e1b4b')
+    return img
 
-# --- SIDEBAR: ATTENDEE AUTHENTICATION & PROGRESS ---
-with str.sidebar:
-    str.title("🛠️ Event Identity")
-    str.write("Register your developer handle to track your event milestone achievements.")
+preset_bg = get_preset_background()
+
+# --- STEP 2: MOBILE CAMERA CAPTURE HUB ---
+st.subheader("Step 1: Capture Your Workspace Photo")
+captured_file = st.camera_input("Take a selfie or capture your local configuration setup")
+
+processed_image = None
+
+if captured_file:
+    # Open captured file stream with PIL
+    user_img = Image.open(captured_file)
     
-    # Capture Attendee Identity
-    name_input = str.text_input("Full Name", value=str.session_state.attendee_name)
-    github_input = str.text_input("GitHub Username", value=str.session_state.github_handle, placeholder="e.g., samik-roy")
+    # Auto-rotate based on mobile EXIF data metadata protocols
+    user_img = ImageOps.exif_transpose(user_img)
     
-    if name_input and github_input:
-        str.session_state.attendee_name = name_input
-        str.session_state.github_handle = github_input
-        str.success(f"Linked: `{str.session_state.github_handle}`")
-    else:
-        str.warning("Please fill profile info to activate portfolio tracking.")
+    # Process & Resize user photo to fit elegantly into a split frame format inside the asset banner
+    user_img_resized = user_img.resize((360, 410))
+    
+    # Paste user image layer securely over the preset brand template base canvas
+    final_canvas = preset_bg.copy()
+    final_canvas.paste(user_img_resized, (20, 20))
+    
+    # Save composite output image to byte buffer layout
+    img_byte_arr = io.BytesIO()
+    final_canvas.save(img_byte_arr, format='PNG')
+    processed_image = img_byte_arr.getvalue()
+    
+    st.success("🖼️ Branded event graphic compiled perfectly!")
+    st.image(final_canvas, caption="Your Event Share Graphic Preview", use_container_width=True)
 
-    str.markdown("---")
-    str.subheader("🏆 Your Unlocked Badges")
-    
-    # Display dynamic visual gamification metrics based on milestones completed
-    completed_count = sum(str.session_state.milestones.values())
-    total_milestones = len(str.session_state.milestones)
-    
-    str.metric(label="Milestones Cleared", value=f"{completed_count} / {total_milestones}")
-    str.progress(completed_count / total_milestones)
-    
-    if completed_count == total_milestones:
-        str.balloons()
-        str.success("🏅 Elite Localhost Builder Unlocked!")
+# --- STEP 3: CAPTION ENGINE ---
+st.subheader("Step 2: Write Your Key Breakthrough Insight")
+default_caption = "🚀 Just wrapped up a hands-on lab pipeline at the #BuildLocalhost event! Built an end-to-end framework locally from scratch. Real proof-of-work over theory."
+user_caption = st.text_area("What was your primary technical milestone breakthrough today?", value=default_caption, height=100)
 
-# --- MAIN DASHBOARD INTERFACE ---
-str.title("Build Localhost: Event Hub & Feedback Portal")
-str.markdown(
-    "Welcome to the interactive sandbox workstation. Track your lab deployments, "
-    "view event metrics, and cast your performance feedback directly below."
-)
-
-if not str.session_state.attendee_name:
-    str.info("👉 Enter your profile details in the left sidebar configuration panel to unlock the full workbench features.")
+# --- STEP 4: REAL-TIME LINKEDIN SIMULATOR CARD ---
+if processed_image:
+    st.markdown("---")
+    st.subheader("Step 3: LinkedIn Post Simulated Preview")
+    
+    # Construct a layout box block that accurately mimics modern desktop/mobile LinkedIn feeds
+    st.markdown(f"""
+    <div class="linkedin-card">
+        <div style="display: flex; align-items: center; margin-bottom: 12px;">
+            <div style="background-color: #56687a; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; margin-right: 10px;">
+                YO
+            </div>
+            <div>
+                <div style="font-size: 14px; font-weight: 600; color: #f3f6f8;">You (Attendee Profile)</div>
+                <div style="font-size: 11px; color: #939bb4;">Software Engineer & Builder • Just now</div>
+            </div>
+        </div>
+        <div style="font-size: 13px; line-height: 1.4; margin-bottom: 12px; white-space: pre-wrap; color: #d0d7de;">{user_caption}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Display the compiled card image inside the custom css container box block framework
+    st.image(processed_image, use_container_width=True)
+    
+    # --- STEP 5: REDIRECT DIRECT SHARE ACTION LAUNCHER ---
+    st.markdown("### Step 4: Share with your professional network")
+    
+    # Prepare the URL encoded text share parameter vector
+    encoded_text = urllib.parse.quote(user_caption)
+    linkedin_intent_url = f"https://www.linkedin.com/sharing/share-offsite/?text={encoded_text}"
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        # Prompt user to download image file locally first
+        st.download_button(
+            label="💾 1. Download Branded Image",
+            data=processed_image,
+            file_name="build_localhost_moment.png",
+            mime="image/png",
+            use_container_width=True
+        )
+    with col2:
+        # Open LinkedIn Share box dialog endpoint path natively
+        st.link_button("🌐 2. Open & Paste to LinkedIn", linkedin_intent_url, use_container_width=True)
+        
+    st.info("💡 **How to publish:** Click Button 1 to save the premium generated image asset, then click Button 2. Your custom text will copy forward instantly into the composition dashboard screen, where you can attach your picture asset.")
 else:
-    # Setup interactive responsive workspace tabs
-    tab_journey, tab_feedback, tab_metrics = str.tabs([
-        "🚀 My Learning Journey Checklist", 
-        "📝 Submit Event Feedback", 
-        "📊 Admin Analytics View"
-    ])
-
-    # --- TAB 1: GAMIFIED EVENT CHECKLIST ---
-    with tab_journey:
-        str.subheader("Complete Lab Objectives & Earn Contributions")
-        str.write("Check off objectives as you complete them during the live hackathon session:")
-        
-        # Iteratively render dynamic interactive check-boxes bound to session state memory
-        for milestone in str.session_state.milestones.keys():
-            is_checked = str.checkbox(milestone, value=str.session_state.milestones[milestone])
-            str.session_state.milestones[milestone] = is_checked
-            
-        str.markdown("---")
-        str.markdown("### 🎁 Your Takeaway Package status")
-        if completed_count > 0:
-            str.info(f"Hey **{str.session_state.attendee_name}**, your checkpoint data is being staged. At the conclusion of Build Localhost, your verified markdown roadmap can be exported directly to your account profile repository.")
-        else:
-            str.write("Begin ticking off milestones above to populate your custom developer profile portfolio logs.")
-
-    # --- TAB 2: DETAILED FEEDBACK CAPTURE ---
-    with tab_feedback:
-        str.subheader("Rate Your Build Localhost Experience")
-        
-        if str.session_state.feedback_submitted:
-            str.success("🎉 Thank you! Your architectural experience feedback metrics have been captured successfully.")
-        else:
-            with str.form("feedback_form"):
-                event_rating = str.slider("Rate the overall session utility (1 = Basic, 5 = Elite Architect)", 1, 5, 4)
-                feedback_comments = str.text_area("What was your primary takeaway or configuration breakthrough today?")
-                
-                submit_button = str.form_submit_button("Submit Final Log Verification")
-                
-                if submit_button:
-                    if feedback_comments.strip() == "":
-                        str.error("Please add a short comment about your experience before submitting.")
-                    else:
-                        save_feedback(
-                            str.session_state.attendee_name,
-                            str.session_state.github_handle,
-                            event_rating,
-                            feedback_comments
-                        )
-                        str.session_state.feedback_submitted = True
-                        str.experimental_rerun()
-
-    # --- TAB 3: ADMIN METRICS / ANALYTICS ---
-    with tab_metrics:
-        str.subheader("Real-Time Event Data Stream")
-        str.write("This metrics cluster displays live feedback responses received during the event execution loops.")
-        
-        if os.path.exists(FEEDBACK_FILE):
-            df = pd.read_csv(FEEDBACK_FILE)
-            
-            # Show summarized KPIs
-            col1, col2 = str.columns(2)
-            with col1:
-                str.metric("Total Logs Captured", len(df))
-            with col2:
-                str.metric("Average Experience Rating", f"{df['Rating'].mean():.2f} / 5")
-            
-            str.markdown("### Raw Submission Datatable View")
-            str.dataframe(df, use_container_width=True)
-        else:
-            str.info("Waiting for first attendee log entry stream to populate telemetry databases.")
+    st.info("📸 Snap a photo above using your device camera interface to activate the live LinkedIn post renderer engine.")
