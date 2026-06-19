@@ -1,128 +1,195 @@
 import streamlit as st
-import pandas as pd
 from PIL import Image, ImageOps
 import io
+import os
 import urllib.parse
+from openai import OpenAI
 
-# --- PAGE SETUP & THEME ---
+# --- INITIALIZATION & CONFIG ---
 st.set_page_config(
-    page_title="Build Localhost - Social Share Hub",
-    page_icon="📸",
+    page_title="Build Localhost - Content Wizard",
+    page_icon="🪄",
     layout="centered"
 )
 
-# Custom minimalistic styling matching your enterprise dark/indigo aesthetic
-st.markdown("""
-    <style>
-    .reportview-container { background: #0b0f19; }
-    div.stButton > button:first-child {
-        background-color: #4f46e5;
-        color: white;
-        border-radius: 8px;
-    }
-    .linkedin-card {
-        background-color: #1d2226;
-        border: 1px solid #38434f;
-        border-radius: 10px;
-        padding: 16px;
-        color: #eef3f8;
-        font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Initialize OpenAI client (Ensure OPENAI_API_KEY is set in your environment variables)
+# If running locally, set it via: export OPENAI_API_KEY="your-key"
+# If deploying to Streamlit Community Cloud, add it to "Secrets"
+@st.cache_resource
+def get_openai_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        return OpenAI(api_key=api_key)
+    return None
 
-st.title("📸 Build Localhost Post Creator")
-st.write("Snap a live photo, add your core takeaway insights, and instantly export a tailored LinkedIn proof-of-work post.")
+client = get_openai_client()
 
-# --- STEP 1: INITIALIZE BACKGROUND TEMPLATE ---
-# Creating a fallback blank indigo background banner if an external asset isn't present
-@st.cache_data
-def get_preset_background():
-    # In production, replace this with your branded asset: Image.open("assets/event_banner.png")
-    # For now, we dynamically generate a sleek dark indigo canvas block template
-    img = Image.new('RGB', (800, 450), color='#1e1b4b')
+# Initialize Multi-step Wizard Session States
+if "step" not in st.session_state:
+    st.session_state.step = 1
+if "name" not in st.session_state:
+    st.session_state.name = ""
+if "github" not in st.session_state:
+    st.session_state.github = ""
+if "photo_bytes" not in st.session_state:
+    st.session_state.photo_bytes = None
+if "transcript" not in st.session_state:
+    st.session_state.transcript = ""
+if "linkedin_post" not in st.session_state:
+    st.session_state.linkedin_post = ""
+
+# --- HELPER FUNCTIONS ---
+def generate_mock_background():
+    """Creates a default dark-mode template frame canvas layer."""
+    img = Image.new('RGB', (800, 450), color='#0f172a')
     return img
 
-preset_bg = get_preset_background()
-
-# --- STEP 2: MOBILE CAMERA CAPTURE HUB ---
-st.subheader("Step 1: Capture Your Workspace Photo")
-captured_file = st.camera_input("Take a selfie or capture your local configuration setup")
-
-processed_image = None
-
-if captured_file:
-    # Open captured file stream with PIL
-    user_img = Image.open(captured_file)
-    
-    # Auto-rotate based on mobile EXIF data metadata protocols
-    user_img = ImageOps.exif_transpose(user_img)
-    
-    # Process & Resize user photo to fit elegantly into a split frame format inside the asset banner
+def process_composite_graphic(captured_stream):
+    """Layers the captured user picture cleanly over the template block."""
+    user_img = Image.open(captured_stream)
+    user_img = ImageOps.exif_transpose(user_img) # Handle mobile rotation tags
     user_img_resized = user_img.resize((360, 410))
     
-    # Paste user image layer securely over the preset brand template base canvas
-    final_canvas = preset_bg.copy()
-    final_canvas.paste(user_img_resized, (20, 20))
+    canvas = generate_mock_background()
+    canvas.paste(user_img_resized, (20, 20))
     
-    # Save composite output image to byte buffer layout
-    img_byte_arr = io.BytesIO()
-    final_canvas.save(img_byte_arr, format='PNG')
-    processed_image = img_byte_arr.getvalue()
+    # Save composite asset out to byte streams buffer
+    buffer = io.BytesIO()
+    canvas.save(buffer, format='PNG')
+    return buffer.getvalue()
+
+# --- WIZARD HEADER & NAVIGATION ---
+st.title("🪄 Build Localhost Content Wizard")
+st.write("Convert your live hackathon breakthroughs into polished LinkedIn proof-of-work.")
+
+# Visual step progress bar indicators
+step_cols = st.columns(3)
+with step_cols[0]:
+    st.markdown(f"**Step 1: Identity & Capture** {'🟢' if st.session_state.step == 1 else '⚪'}")
+with step_cols[1]:
+    st.markdown(f"**Step 2: Voice Dictation** {'🟢' if st.session_state.step == 2 else '⚪'}")
+with step_cols[2]:
+    st.markdown(f"**Step 3: Preview & Publish** {'🟢' if st.session_state.step == 3 else '⚪'}")
+st.markdown("---")
+
+# ==========================================
+# STEP 1: CAPTURE PHOTO & PERSONAL DETAILS
+# ==========================================
+if st.session_state.step == 1:
+    st.subheader("Step 1: Your Profile & Perspective")
     
-    st.success("🖼️ Branded event graphic compiled perfectly!")
-    st.image(final_canvas, caption="Your Event Share Graphic Preview", use_container_width=True)
+    name = st.text_input("Full Name", value=st.session_state.name)
+    github = st.text_input("GitHub Username", value=st.session_state.github, placeholder="e.g., samik-roy")
+    
+    st.write("📸 Snap a picture of your local environment configuration workspace:")
+    camera_file = st.camera_input("Capture Workspace")
+    
+    if camera_file and name and github:
+        if st.button("Proceed to Voice Dictation ➡️"):
+            st.session_state.name = name
+            st.session_state.github = github
+            st.session_state.photo_bytes = process_composite_graphic(camera_file)
+            st.session_state.step = 2
+            st.rerun()
+    else:
+        st.info("💡 Fill out your personal details and capture a live workspace photo to advance.")
 
-# --- STEP 3: CAPTION ENGINE ---
-st.subheader("Step 2: Write Your Key Breakthrough Insight")
-default_caption = "🚀 Just wrapped up a hands-on lab pipeline at the #BuildLocalhost event! Built an end-to-end framework locally from scratch. Real proof-of-work over theory."
-user_caption = st.text_area("What was your primary technical milestone breakthrough today?", value=default_caption, height=100)
+# ==========================================
+# STEP 2: AUDIO RECORDING & AI TRANSLATION
+# ==========================================
+elif st.session_state.step == 2:
+    st.subheader("Step 2: Speak Your Breakthrough")
+    st.write(f"Hey **{st.session_state.name}**, don't bother typing out a long post. Click below to record your voice detailing your technical milestones or any bugs you successfully solved.")
+    
+    # Native Streamlit audio input recorder component (Mobile browser friendly)
+    audio_file = st.audio_input("Record your thoughts out loud")
+    
+    if audio_file:
+        st.audio(audio_file)
+        
+        if not client:
+            st.error("⚠️ OpenAI API Key missing from environment. Cannot run automated voice transcription workflows.")
+        else:
+            if st.button("✨ Transcribe & Craft My LinkedIn Post"):
+                with st.spinner("Processing speech-to-text telemetry and engineering post layouts..."):
+                    try:
+                        # 1. Transcribe the audio stream using Whisper API
+                        # Convert Streamlit UploadedFile object into a named byte stream file object Whisper accepts
+                        audio_bytes = audio_file.read()
+                        audio_io = io.BytesIO(audio_bytes)
+                        audio_io.name = "audio.wav"
+                        
+                        transcript_obj = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_io
+                        )
+                        raw_text = transcript_obj.text
+                        st.session_state.transcript = raw_text
+                        
+                        # 2. Reshape raw spoken transcript into a high-converting LinkedIn post via GPT
+                        system_prompt = (
+                            "You are an expert technical developer and executive ghostwriter. "
+                            "Take the raw, conversational, spoken transcript provided and turn it into a crisp, "
+                            "compelling LinkedIn post. Maintain a professional, developer-first tone. Use strategic line breaks "
+                            "for high mobile readability, clear formatting, and include a few relevant hashtags like #BuildLocalhost."
+                        )
+                        
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": f"Attendee Name: {st.session_state.name}\nGitHub: {st.session_state.github}\nRaw spoken thoughts: {raw_text}"}
+                            ]
+                        )
+                        
+                        st.session_state.linkedin_post = response.choices[0].message.content
+                        st.session_state.step = 3
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error during AI pipeline loop: {str(e)}")
+                        
+    if st.button("⬅️ Back to Step 1"):
+        st.session_state.step = 1
+        st.rerun()
 
-# --- STEP 4: REAL-TIME LINKEDIN SIMULATOR CARD ---
-if processed_image:
+# ==========================================
+# STEP 3: PREVIEW LINKEDIN POST & PUBLISH
+# ==========================================
+elif st.session_state.step == 3:
+    st.subheader("Step 3: Final Verification & Share Interface")
+    
+    # Display the composite photo created in Step 1
+    if st.session_state.photo_bytes:
+        st.image(st.session_state.photo_bytes, caption="Generated Event Graphic Banner", use_container_width=True)
+    
+    # Text area allowing the builder to do a final text polish before posting
+    edited_post = st.text_area("Refine your finalized copy text:", value=st.session_state.linkedin_post, height=220)
+    
     st.markdown("---")
-    st.subheader("Step 3: LinkedIn Post Simulated Preview")
     
-    # Construct a layout box block that accurately mimics modern desktop/mobile LinkedIn feeds
-    st.markdown(f"""
-    <div class="linkedin-card">
-        <div style="display: flex; align-items: center; margin-bottom: 12px;">
-            <div style="background-color: #56687a; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; margin-right: 10px;">
-                YO
-            </div>
-            <div>
-                <div style="font-size: 14px; font-weight: 600; color: #f3f6f8;">You (Attendee Profile)</div>
-                <div style="font-size: 11px; color: #939bb4;">Software Engineer & Builder • Just now</div>
-            </div>
-        </div>
-        <div style="font-size: 13px; line-height: 1.4; margin-bottom: 12px; white-space: pre-wrap; color: #d0d7de;">{user_caption}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Display the compiled card image inside the custom css container box block framework
-    st.image(processed_image, use_container_width=True)
-    
-    # --- STEP 5: REDIRECT DIRECT SHARE ACTION LAUNCHER ---
-    st.markdown("### Step 4: Share with your professional network")
-    
-    # Prepare the URL encoded text share parameter vector
-    encoded_text = urllib.parse.quote(user_caption)
-    linkedin_intent_url = f"https://www.linkedin.com/sharing/share-offsite/?text={encoded_text}"
+    # Build URL intent string link vector to open up LinkedIn composing fields natively
+    encoded_post_text = urllib.parse.quote(edited_post)
+    linkedin_share_url = f"https://www.linkedin.com/sharing/share-offsite/?text={encoded_post_text}"
     
     col1, col2 = st.columns(2)
     with col1:
-        # Prompt user to download image file locally first
         st.download_button(
-            label="💾 1. Download Branded Image",
-            data=processed_image,
-            file_name="build_localhost_moment.png",
+            label="💾 Download Event Image Asset",
+            data=st.session_state.photo_bytes,
+            file_name=f"build_localhost_{st.session_state.github}.png",
             mime="image/png",
             use_container_width=True
         )
     with col2:
-        # Open LinkedIn Share box dialog endpoint path natively
-        st.link_button("🌐 2. Open & Paste to LinkedIn", linkedin_intent_url, use_container_width=True)
+        st.link_button("🚀 Open & Paste onto LinkedIn Feed", linkedin_share_url, use_container_width=True)
         
-    st.info("💡 **How to publish:** Click Button 1 to save the premium generated image asset, then click Button 2. Your custom text will copy forward instantly into the composition dashboard screen, where you can attach your picture asset.")
-else:
-    st.info("📸 Snap a photo above using your device camera interface to activate the live LinkedIn post renderer engine.")
+    st.info("💡 **Next Step Instructions:** Click the Download button to save your event graphic, then hit the LinkedIn link button. Your custom post text will carry forward automatically into the text container field, where you can attach your image asset.")
+    
+    if st.button("🔄 Start A New Entry Wizard"):
+        # Reset wizard configurations state parameters
+        st.session_state.step = 1
+        st.session_state.photo_bytes = None
+        st.session_state.linkedin_post = ""
+        st.session_state.transcript = ""
+        st.rerun()
