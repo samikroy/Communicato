@@ -12,17 +12,27 @@ st.set_page_config(
     layout="centered"
 )
 
-# Initialize OpenAI client (Ensure OPENAI_API_KEY is set in your environment variables)
-# If running locally, set it via: export OPENAI_API_KEY="your-key"
-# If deploying to Streamlit Community Cloud, add it to "Secrets"
-@st.cache_resource
-def get_openai_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        return OpenAI(api_key=api_key)
+# --- SIDEBAR CONFIGURATION & API ENGINE ---
+with st.sidebar:
+    st.title("⚙️ Engine Settings")
+    
+    # Allow switching to a keyless fallback mode directly from the UI
+    ai_mode = st.radio(
+        "AI Transcription Mode",
+        ["Off (Use Local Text/Keyboard Dictation)", "On (Use OpenAI Whisper & GPT)"],
+        index=0,
+        help="Switch to 'Off' if you do not have an OpenAI API key. Attendees can use their mobile keyboard's native voice button instead."
+    )
+    
+    openai_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-proj-...", value=os.getenv("OPENAI_API_KEY", ""))
+
+# Initialize OpenAI client if enabled and key is present
+def get_openai_client(key):
+    if ai_mode.startswith("On") and key:
+        return OpenAI(api_key=key)
     return None
 
-client = get_openai_client()
+client = get_openai_client(openai_key)
 
 # Initialize Multi-step Wizard Session States
 if "step" not in st.session_state:
@@ -33,47 +43,41 @@ if "github" not in st.session_state:
     st.session_state.github = ""
 if "photo_bytes" not in st.session_state:
     st.session_state.photo_bytes = None
-if "transcript" not in st.session_state:
-    st.session_state.transcript = ""
 if "linkedin_post" not in st.session_state:
     st.session_state.linkedin_post = ""
 
-# --- HELPER FUNCTIONS ---
+# --- IMAGE PROCESSING HELPERS ---
 def generate_mock_background():
-    """Creates a default dark-mode template frame canvas layer."""
     img = Image.new('RGB', (800, 450), color='#0f172a')
     return img
 
 def process_composite_graphic(captured_stream):
-    """Layers the captured user picture cleanly over the template block."""
     user_img = Image.open(captured_stream)
-    user_img = ImageOps.exif_transpose(user_img) # Handle mobile rotation tags
+    user_img = ImageOps.exif_transpose(user_img) 
     user_img_resized = user_img.resize((360, 410))
     
     canvas = generate_mock_background()
     canvas.paste(user_img_resized, (20, 20))
     
-    # Save composite asset out to byte streams buffer
     buffer = io.BytesIO()
     canvas.save(buffer, format='PNG')
     return buffer.getvalue()
 
-# --- WIZARD HEADER & NAVIGATION ---
+# --- WIZARD HEADER ---
 st.title("🪄 Build Localhost Content Wizard")
-st.write("Convert your live hackathon breakthroughs into polished LinkedIn proof-of-work.")
 
-# Visual step progress bar indicators
+# Visual progress tracking indicator
 step_cols = st.columns(3)
 with step_cols[0]:
     st.markdown(f"**Step 1: Identity & Capture** {'🟢' if st.session_state.step == 1 else '⚪'}")
 with step_cols[1]:
-    st.markdown(f"**Step 2: Voice Dictation** {'🟢' if st.session_state.step == 2 else '⚪'}")
+    st.markdown(f"**Step 2: Core Insights** {'🟢' if st.session_state.step == 2 else '⚪'}")
 with step_cols[2]:
     st.markdown(f"**Step 3: Preview & Publish** {'🟢' if st.session_state.step == 3 else '⚪'}")
 st.markdown("---")
 
 # ==========================================
-# STEP 1: CAPTURE PHOTO & PERSONAL DETAILS
+# STEP 1: CAPTURE PHOTO & DETAILS
 # ==========================================
 if st.session_state.step == 1:
     st.subheader("Step 1: Your Profile & Perspective")
@@ -81,74 +85,90 @@ if st.session_state.step == 1:
     name = st.text_input("Full Name", value=st.session_state.name)
     github = st.text_input("GitHub Username", value=st.session_state.github, placeholder="e.g., samik-roy")
     
-    st.write("📸 Snap a picture of your local environment configuration workspace:")
+    st.write("📸 Snap a picture of your local environment setup:")
     camera_file = st.camera_input("Capture Workspace")
     
     if camera_file and name and github:
-        if st.button("Proceed to Voice Dictation ➡️"):
+        if st.button("Proceed to Next Step ➡️"):
             st.session_state.name = name
             st.session_state.github = github
             st.session_state.photo_bytes = process_composite_graphic(camera_file)
             st.session_state.step = 2
             st.rerun()
     else:
-        st.info("💡 Fill out your personal details and capture a live workspace photo to advance.")
+        st.info("💡 Complete your personal details and capture a live workspace photo to advance the wizard.")
 
 # ==========================================
-# STEP 2: AUDIO RECORDING & AI TRANSLATION
+# STEP 2: INSIGHT CAPTURE (DYNAMIC MODE)
 # ==========================================
 elif st.session_state.step == 2:
-    st.subheader("Step 2: Speak Your Breakthrough")
-    st.write(f"Hey **{st.session_state.name}**, don't bother typing out a long post. Click below to record your voice detailing your technical milestones or any bugs you successfully solved.")
+    st.subheader("Step 2: Document Your Breakthrough")
     
-    # Native Streamlit audio input recorder component (Mobile browser friendly)
-    audio_file = st.audio_input("Record your thoughts out loud")
-    
-    if audio_file:
-        st.audio(audio_file)
+    # MODE A: NO OPENAI KEY (KEYBOARD VOICE FALLBACK)
+    if ai_mode.startswith("Off"):
+        st.info("🎤 **Mobile Tip:** Tap the text block below and press the **Microphone icon** on your phone's digital keyboard to dictate your thoughts seamlessly without an API key!")
         
-        if not client:
-            st.error("⚠️ OpenAI API Key missing from environment. Cannot run automated voice transcription workflows.")
-        else:
-            if st.button("✨ Transcribe & Craft My LinkedIn Post"):
-                with st.spinner("Processing speech-to-text telemetry and engineering post layouts..."):
-                    try:
-                        # 1. Transcribe the audio stream using Whisper API
-                        # Convert Streamlit UploadedFile object into a named byte stream file object Whisper accepts
-                        audio_bytes = audio_file.read()
-                        audio_io = io.BytesIO(audio_bytes)
-                        audio_io.name = "audio.wav"
-                        
-                        transcript_obj = client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=audio_io
-                        )
-                        raw_text = transcript_obj.text
-                        st.session_state.transcript = raw_text
-                        
-                        # 2. Reshape raw spoken transcript into a high-converting LinkedIn post via GPT
-                        system_prompt = (
-                            "You are an expert technical developer and executive ghostwriter. "
-                            "Take the raw, conversational, spoken transcript provided and turn it into a crisp, "
-                            "compelling LinkedIn post. Maintain a professional, developer-first tone. Use strategic line breaks "
-                            "for high mobile readability, clear formatting, and include a few relevant hashtags like #BuildLocalhost."
-                        )
-                        
-                        response = client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": f"Attendee Name: {st.session_state.name}\nGitHub: {st.session_state.github}\nRaw spoken thoughts: {raw_text}"}
-                            ]
-                        )
-                        
-                        st.session_state.linkedin_post = response.choices[0].message.content
-                        st.session_state.step = 3
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Error during AI pipeline loop: {str(e)}")
-                        
+        user_text = st.text_area(
+            "What was your primary technical milestone breakthrough today?", 
+            placeholder="Type or dictate your core technical accomplishments here...",
+            height=150
+        )
+        
+        if st.button("✨ Structure into Post ➡️"):
+            if user_text.strip() == "":
+                st.error("Please add some insights or notes before advancing.")
+            else:
+                # Local baseline formatting without calling cloud models
+                st.session_state.linkedin_post = (
+                    f"🚀 Just wrapped up a hands-on lab pipeline at #BuildLocalhost!\n\n"
+                    f"🛠️ **Milestone Breakthrough:**\n{user_text}\n\n"
+                    f"👨‍💻 Connected on GitHub: github.com/{st.session_state.github}\n\n"
+                    f"#BuildLocalhost #CloudSecurity #DevSecOps #ProofOfWork"
+                )
+                st.session_state.step = 3
+                st.rerun()
+
+    # MODE B: AUTOMATED OPENAI PIPELINE
+    else:
+        st.write("🎙️ Record your voice detailing your configurations out loud:")
+        audio_file = st.audio_input("Record Voice Segment")
+        
+        if audio_file:
+            st.audio(audio_file)
+            
+            if not client:
+                st.error("⚠️ OpenAI Engine active but API Key is missing. Please provide a valid key in the sidebar configuration drawer or switch to Local Text mode.")
+            else:
+                if st.button("✨ Transcribe & Craft My LinkedIn Post via AI"):
+                    with st.spinner("Processing speech-to-text transcription algorithms..."):
+                        try:
+                            audio_bytes = audio_file.read()
+                            audio_io = io.BytesIO(audio_bytes)
+                            audio_io.name = "audio.wav"
+                            
+                            transcript_obj = client.audio.transcriptions.create(
+                                model="whisper-1", file=audio_io
+                            )
+                            raw_text = transcript_obj.text
+                            
+                            system_prompt = (
+                                "You are an expert technical developer and ghostwriter. Turn the conversational spoken transcript "
+                                "into a crisp, high-impact LinkedIn post. Maintain a professional tone, use clean line breaks for mobile formatting, "
+                                "and include structural hashtags."
+                            )
+                            response = client.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": f"Name: {st.session_state.name}\nGitHub: {st.session_state.github}\nTranscript: {raw_text}"}
+                                ]
+                            )
+                            st.session_state.linkedin_post = response.choices[0].message.content
+                            st.session_state.step = 3
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error executing AI generation loop: {str(e)}")
+                            
     if st.button("⬅️ Back to Step 1"):
         st.session_state.step = 1
         st.rerun()
@@ -159,16 +179,13 @@ elif st.session_state.step == 2:
 elif st.session_state.step == 3:
     st.subheader("Step 3: Final Verification & Share Interface")
     
-    # Display the composite photo created in Step 1
     if st.session_state.photo_bytes:
         st.image(st.session_state.photo_bytes, caption="Generated Event Graphic Banner", use_container_width=True)
     
-    # Text area allowing the builder to do a final text polish before posting
-    edited_post = st.text_area("Refine your finalized copy text:", value=st.session_state.linkedin_post, height=220)
+    edited_post = st.text_area("Refine your finalized copy text layout:", value=st.session_state.linkedin_post, height=220)
     
     st.markdown("---")
     
-    # Build URL intent string link vector to open up LinkedIn composing fields natively
     encoded_post_text = urllib.parse.quote(edited_post)
     linkedin_share_url = f"https://www.linkedin.com/sharing/share-offsite/?text={encoded_post_text}"
     
@@ -184,12 +201,8 @@ elif st.session_state.step == 3:
     with col2:
         st.link_button("🚀 Open & Paste onto LinkedIn Feed", linkedin_share_url, use_container_width=True)
         
-    st.info("💡 **Next Step Instructions:** Click the Download button to save your event graphic, then hit the LinkedIn link button. Your custom post text will carry forward automatically into the text container field, where you can attach your image asset.")
-    
     if st.button("🔄 Start A New Entry Wizard"):
-        # Reset wizard configurations state parameters
         st.session_state.step = 1
         st.session_state.photo_bytes = None
         st.session_state.linkedin_post = ""
-        st.session_state.transcript = ""
         st.rerun()
