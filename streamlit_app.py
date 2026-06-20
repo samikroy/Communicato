@@ -27,10 +27,10 @@ REVOKE_TOKEN_URL = "https://api.github.com/applications/grant"
 oauth2 = OAuth2Component(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
-    authorize_url=AUTHORIZE_URL,
-    token_url=TOKEN_URL,
-    refresh_token_url=REFRESH_TOKEN_URL,
-    revoke_token_url=REVOKE_TOKEN_URL
+    authorize_endpoint=AUTHORIZE_URL,       # Changed from authorize_url
+    token_endpoint=TOKEN_URL,               # Changed from token_url
+    refresh_token_endpoint=REFRESH_TOKEN_URL, # Changed from refresh_token_url
+    revoke_token_endpoint=REVOKE_TOKEN_URL   # Changed from revoke_token_url
 )
 
 # Initialize Wizard State Parameters Memory
