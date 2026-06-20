@@ -80,7 +80,7 @@ if "auth" not in st.session_state:
         # Requesting "read:user" scope to safely read their profile name and handle
         result = oauth2.authorize_button(
             name="Sign in with GitHub",
-            redirect_uri=st.secrets.get("REDIRECT_URI", "http://localhost:8501"), 
+            redirect_uri=st.secrets.get("REDIRECT_URI", "https://communicato.streamlit.app"), 
             scope="read:user",
             key="github_auth_component"
         )
