@@ -2,3 +2,5 @@ streamlit>=1.35.0
 openai
 pillow
 streamlit-oauth
+PyGithub
+requests
