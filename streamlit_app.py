@@ -25,12 +25,12 @@ REVOKE_TOKEN_URL = "https://api.github.com/applications/grant"
 
 # Initialize OAuth Component Interface
 oauth2 = OAuth2Component(
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    authorize_url=AUTHORIZE_URL,
-    token_url=TOKEN_URL,
-    refresh_token_url=REFRESH_TOKEN_URL,
-    revoke_token_url=REVOKE_TOKEN_URL
+    CLIENT_ID,
+    CLIENT_SECRET,
+    AUTHORIZE_URL,
+    TOKEN_URL,
+    TOKEN_URL,  # GitHub uses the same URL for refresh token handling
+    "https://api.github.com/applications/grant"  # Revoke URL
 )
 
 # Initialize Wizard State Parameters Memory
